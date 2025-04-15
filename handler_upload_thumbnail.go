@@ -4,7 +4,8 @@ import (
 	"fmt"
 	"net/http"
 	"io"
-	"encoding/base64"
+	"mime"
+	"os"
 
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
 	"github.com/google/uuid"
@@ -34,13 +35,10 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 	fmt.Println("uploading thumbnail for video", videoID, "by user", userID)
 
 	// Hanlder multipart form upload of thumbnail and stores in the maps
-
 	// Bit shift 10 to the left 20 times to get an integer stores proper number of byte
 	// Bit shifting is a way to multiply by powers of 2. 10 << 20 is the same as 10 * 1024 * 1024, which is 10MB
 	const maxMemory = 10 << 20;
 	r.ParseMultipartForm(maxMemory)
-
-	// Get image data from the form
 
 	// Get the file data and file headers. The key the web browser is using is called "thumbnail"
 	file, header, err := r.FormFile("thumbnail")
@@ -51,18 +49,15 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 	defer file.Close();
 
 	// Get the media type from the form file's Content-Type header
-	mediaType := header.Header.Get("Content-Type")
-
-	// Read all the image data into a byte slice using
-	imageData, err := io.ReadAll(file)
+	mediaType, _, err := mime.ParseMediaType(header.Header.Get("Content-Type"))
 	if err != nil {
-		respondWithError(w, http.StatusBadRequest, "Unable to read image data", err)
+		respondWithError(w, http.StatusBadRequest, "Invalid Content Type", err)
 		return
 	}
-
-	// Convert image data to base64 string
-	encodeImageData := base64.StdEncoding.EncodeToString(imageData)
-	dataURL := fmt.Sprintf("data:%s;base64,%s", mediaType, encodeImageData)
+	if mediaType != "image/jpeg" &&  mediaType != "image/png" {
+		respondWithError(w, http.StatusBadRequest, "Invalid media type", err)
+		return
+	}
 
 	// Get video meta data
 	video, err := cfg.db.GetVideo(videoID)	
@@ -77,9 +72,27 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	// Save file at specific file path
+	assetPath := getAssetPath(videoID, mediaType)
+	assetDiskPath := cfg.getAssetDiskPath(assetPath)
+
+	dst, err := os.Create(assetDiskPath)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Unable to create new file", err)
+		return
+	}
+	defer dst.Close()
+
+	// Copy contents to the new file on disk
+	if _, err := io.Copy(dst, file); err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Unable to copy file", err)
+		return
+	}
+
+
 	// Update video meta data
-	// url := fmt.Sprintf("http://localhost:%d/api/thumbnails/%s", 8091, video.ID.String())
-	video.ThumbnailURL = &dataURL
+	tbURL := cfg.getAssetURL(assetPath)
+	video.ThumbnailURL = &tbURL
 
 	// Update record in db
 	err = cfg.db.UpdateVideo(video)
