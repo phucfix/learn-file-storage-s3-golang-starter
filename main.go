@@ -6,7 +6,6 @@ import (
 	"os"
 
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/database"
-
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 )
@@ -23,17 +22,12 @@ type apiConfig struct {
 	port             string
 }
 
-type thumbnail struct {
-	data      []byte
-	mediaType string
-}
-
 func main() {
 	godotenv.Load(".env")
 
 	pathToDB := os.Getenv("DB_PATH")
 	if pathToDB == "" {
-		log.Fatal("DB_URL must be set")
+		log.Fatal("DB_PATH must be set")
 	}
 
 	db, err := database.NewClient(pathToDB)
@@ -128,3 +122,4 @@ func main() {
 	log.Printf("Serving on: http://localhost:%s/app/\n", port)
 	log.Fatal(srv.ListenAndServe())
 }
+
