@@ -83,18 +83,42 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	tempFile.Close()
+
+	// Create the process version of the video
+	processedFileName, err := processVideoForFastStart(tempFile.Name())
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't create process version of video", err)
+		return
+	}
+	defer os.Remove(processedFileName)
+
+	// Determine aspects ratio
+	ratio, err := getVideoAspectRatio(processedFileName)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error getting video's aspect ratio", err)
+		return
+	}
+
 	// Reset the tempFile's file pointer to the beginning, allow to read the file again from beginning
-	if _, err := tempFile.Seek(0, io.SeekStart); err != nil {
+	processedFile, err := os.Open(processedFileName)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Error open processed file", err)
+		return
+	}
+	defer processedFile.Close()
+
+	if _, err := processedFile.Seek(0, io.SeekStart); err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Error reset temp files pointer", err)
 		return
 	}
 
 	// Put the object into S3
-	fileKey := getAssetPath(mediaType)
+	fileKey := ratio + "/" + getAssetPath(mediaType)
 	cfg.s3Client.PutObject(context.TODO(), &s3.PutObjectInput{
 		Bucket: 	 aws.String(cfg.s3Bucket),
 		Key: 		 aws.String(fileKey),
-		Body: 		 tempFile,
+		Body: 		 processedFile,
 		ContentType: aws.String(mediaType),
 	})
 
