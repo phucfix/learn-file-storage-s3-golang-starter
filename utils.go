@@ -7,3 +7,4 @@ const (
 func approx(a, b float64) bool {
 	return (a - b) < EPSILON && (b - a) < EPSILON
 }
+
